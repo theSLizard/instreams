@@ -2,6 +2,7 @@
 use std::env;
 use std::sync::{Arc, Mutex};
 
+use std::net::{TcpListener, SocketAddr};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -74,7 +75,8 @@ async fn execute(payload: web::Json<RequestMessage>,
     
 }
 
-#[actix_web::main]
+//#[actix_web::main]
+#[actix_rt::main]
 async fn main() -> std::io::Result<()>{
 
     let args: Vec<String> = env::args().collect();
@@ -84,31 +86,58 @@ async fn main() -> std::io::Result<()>{
             match arg.as_str() {
                 "-h" | "--help" => {
                     println!("--- you're on your own !!");
+                    return Ok(());
                 },
                 "-v" | "--version" => {
                     println!("--- instreams 0.1");
+                    return Ok(());
                 },
                 "-s" => {
 
                     println!(":.:.:");
 
+                    let socket_address = if args.len() > 2 { args[2].to_string() } 
+                                                        else { "127.0.0.1:0".to_string() };
+
                     let stream_state = web::Data::new(Arc::new(InstreamState {
                         master_key: Mutex::new(0.to_string()),
                     }));
-                   
-                    return HttpServer::new(move || App::new().app_data(stream_state.clone())
+
+                    let tcp_listener = match TcpListener::bind(socket_address) {
+                            Ok(listener) => listener,
+                            Err(error) => {
+                                eprintln!("::: Failed to bind to address: {}", error);
+                                return Ok(()) // Err(error);
+                            }
+                        };
+                    
+
+                    let socket_address: SocketAddr = match tcp_listener.local_addr() {
+                        Ok(address) => address,
+                        Err(error) => {
+                            eprintln!("::: {}", error);
+                            return Ok(()) //Err(error);
+                        }
+                    };
+
+                    println!(":: addr {:?}", socket_address.ip());
+                    println!(":: port {:?}", socket_address.port());
+
+                    let server = HttpServer::new(move || App::new()
+                                                        .app_data(stream_state.clone())
                                                         .service(hello)
                                                         .service(status)
                                                         .service(execute)
                                                         .service(session_key))
-
-                    .bind("127.0.0.1:8080")?
-                    .run()
+                                                        .listen(tcp_listener)?;
+                    let _ = server.run()
                     .await;
+                    return Ok(());
 
                 },
                 _ => {
                     println!(".::.");
+                    return Ok(());
                 }
             }
         }
