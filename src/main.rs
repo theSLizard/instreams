@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 struct InstreamState {
     master_key: Mutex<String>,
+    code_segment: Mutex<Vec<Instruction>>, 
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -20,6 +21,20 @@ struct ResponseMessage {
 struct RequestMessage {
     key: String,
     message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Instruction {
+    opcode: String,
+    imdval: String,
+    regsrc: u8,
+    regext: u8, 
+    regdst: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ProgramSource {
+    instructions: Vec<Instruction>,
 }
 
 #[get("/")]
@@ -50,6 +65,40 @@ async fn status() -> impl Responder {
     })
 }
 
+// uplads program to execute. Usage example:
+/* curl --header "Content-Type: application/json" --request POST   
+--data '{"instructions":[{"opcode": "add","imdval": "0x","regsrc": 1,"regext": 0,"regdst": 2},
+{"opcode": "sub","imdval": "0x","regsrc": 3,"regext": 0,"regdst": 4}]}' http://localhost:8081/load --verbose */
+#[post("/load")]
+async fn load_program(payload: web::Json<ProgramSource>, 
+                _req:HttpRequest, data: web::Data<Arc<InstreamState>>) -> impl Responder {
+
+                    let mut instructions = data.code_segment.lock().unwrap();
+
+                    // move instructions to the shared area
+                    *instructions = payload.instructions.iter().cloned().collect();
+
+                    return HttpResponse::Ok().json(ResponseMessage {
+                        message: "Program Loaded.".to_string(),
+                    })
+}
+
+// lists the program currently loaded in memory
+//
+// usage example:
+// > curl http://localhost:8081/list 
+// > {"instructions":[{"opcode":"add","imdval":"0x","regsrc":1,"regext":0,"regdst":2},{"opcode":"sub","imdval":"0x","regsrc":3,"regext":0,"regdst":4}]}
+#[get("/list")]
+async fn list_program(data: web::Data<Arc<InstreamState>>) -> impl Responder {
+
+                    let instructions = data.code_segment.lock().unwrap();
+
+                    return HttpResponse::Ok().json(ProgramSource {
+                        instructions: instructions.iter().cloned().collect(),
+                    })
+}
+
+
 #[post("/work")]
 async fn execute(payload: web::Json<RequestMessage>, 
                 _req:HttpRequest, data: web::Data<Arc<InstreamState>>) -> impl Responder {
@@ -75,7 +124,12 @@ async fn execute(payload: web::Json<RequestMessage>,
     
 }
 
-//#[actix_web::main]
+// run server with 
+// > ./instreams -s 
+// (uses defaults + random port)
+// or 
+// > ./instreams -s 127.0.0.1:8081 
+// (specify ip address and port from command line)
 #[actix_rt::main]
 async fn main() -> std::io::Result<()>{
 
@@ -101,6 +155,7 @@ async fn main() -> std::io::Result<()>{
 
                     let stream_state = web::Data::new(Arc::new(InstreamState {
                         master_key: Mutex::new(0.to_string()),
+                        code_segment: Vec::new().into(),
                     }));
 
                     let tcp_listener = match TcpListener::bind(socket_address) {
@@ -128,7 +183,9 @@ async fn main() -> std::io::Result<()>{
                                                         .service(hello)
                                                         .service(status)
                                                         .service(execute)
-                                                        .service(session_key))
+                                                        .service(session_key)
+                                                        .service(load_program)
+                                                        .service(list_program))
                                                         .listen(tcp_listener)?;
                     let _ = server.run()
                     .await;
