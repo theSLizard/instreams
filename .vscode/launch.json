@@ -37,7 +37,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["-s"],
+            "args": ["-s", "127.0.0.1:8082"],
             "cwd": "${workspaceFolder}"
         },
         {

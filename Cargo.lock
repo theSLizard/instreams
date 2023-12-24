@@ -579,6 +579,7 @@ dependencies = [
  "actix-rt",
  "actix-web",
  "serde",
+ "serde_json",
  "uuid",
 ]
 
