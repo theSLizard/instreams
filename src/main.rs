@@ -187,22 +187,16 @@ fn sleep_ms(ms: u64) {
     thread::sleep(Duration::from_millis(ms))
 }
 
-
-fn worker10ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>, running: &Mutex<bool>) {
-    
-    *running.lock().unwrap() = true;
-    println!("Spawning thread: {}", name);
-    
+fn msg_loop(identifier: String, receiver: &Mutex<mpsc::Receiver<&str>>) {
+    // common processing & message loop
     loop { 
         match receiver.lock().unwrap().try_recv() {
             Ok(msg) => {
-                println!("Received by {} => {}", name, msg);
+                println!("Received by {} => {}", identifier, msg);
                 let command_to_execute = CommandEnum::from_str(&msg);
                 match command_to_execute { 
                     Ok(command) => {
                         match command {
-                            // todo: check how to move these strings into a resource that is linked into the data segment.
-                            // so we can simply reference these string resources - is this even possible, btw ?? (it should be)
                             CommandEnum::Stop => { 
                                 println!("... stopping.");
                                 break;
@@ -237,40 +231,65 @@ fn worker10ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>, running: &Mu
                 println!("Sender disconnected, exiting loop.");
                 break;
             }
-
         }
     }
+}
+
+
+fn worker10ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>, running: &Mutex<bool>) {
+    
+    *running.lock().unwrap() = true;
+    println!("Spawning thread: {}", name);
+
+    // when this returns, the worker will exit
+    msg_loop(name, receiver);
 
     println!("Thread exiting ..");
     *running.lock().unwrap() = false;
 }
 
-fn worker25ms(_name: String, _receiver: &Mutex<mpsc::Receiver<&str>>) {
-    loop {
-        sleep_ms(25);
-        println!("|| --> 25 ms"); 
-    }
+fn worker25ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>, running: &Mutex<bool>) {
+    *running.lock().unwrap() = true;
+    println!("Spawning thread: {}", name);
+
+    // when this returns, the worker will exit
+    msg_loop(name, receiver);
+
+    println!("Thread exiting ..");
+    *running.lock().unwrap() = false;
 }
 
-fn worker50ms(_name: String, _receiver: &Mutex<mpsc::Receiver<&str>>) {
-    loop {
-        sleep_ms(50);
-        println!("|| --> 25 ms"); 
-    }
+fn worker50ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>, running: &Mutex<bool>) {
+    *running.lock().unwrap() = true;
+    println!("Spawning thread: {}", name);
+
+    // when this returns, the worker will exit
+    msg_loop(name, receiver);
+
+    println!("Thread exiting ..");
+    *running.lock().unwrap() = false;
 }
 
-fn worker100ms(_name: String, _receiver: &Mutex<mpsc::Receiver<&str>>) {
-    loop {
-        sleep_ms(100);
-        println!("|| --> 25 ms"); 
-    }
+fn worker100ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>, running: &Mutex<bool>) {
+    *running.lock().unwrap() = true;
+    println!("Spawning thread: {}", name);
+
+    // when this returns, the worker will exit
+    msg_loop(name, receiver);
+
+    println!("Thread exiting ..");
+    *running.lock().unwrap() = false;
 }
 
-fn worker250ms(_name: String, _receiver: &Mutex<mpsc::Receiver<&str>>) {
-    loop {
-        sleep_ms(250);
-        println!("|| --> 250 ms"); 
-    }
+fn worker250ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>, running: &Mutex<bool>) {
+    *running.lock().unwrap() = true;
+    println!("Spawning thread: {}", name);
+
+    // when this returns, the worker will exit
+    msg_loop(name, receiver);
+
+    println!("Thread exiting ..");
+    *running.lock().unwrap() = false;
 }
 /////////////////////
 ////// /workers /////
@@ -454,40 +473,88 @@ async fn execute(payload: web::Json<RequestMessage>,
                         }
                     },
                     WorkersEnum::StopWorker10ms => {
-                        println!("{} stopping ...", work_enum.to_string());
-                        data.sender10.lock().unwrap().send("Stop").expect("Send failed");
+                        if true == *data.worker10running.lock().unwrap() {
+                            println!("{} stopping ...", work_enum.to_string());
+                            data.sender10.lock().unwrap().send("Stop").expect("Send failed");
+                        } else {
+                            println!("{} is NOT even running. ", work_enum.to_string());
+                        }          
                     },
                     WorkersEnum::StartWorker25ms => {
-                        println!("{} starting !!", work_enum.to_string());
-                        let _handle25ms = thread::spawn(move || worker25ms(work_enum.to_string(), &data.receiver25));
+                        if false == *data.worker25running.lock().unwrap() {
+                            println!("{} starting !!", work_enum.to_string()); 
+                            let _handle25ms = thread::spawn(move || 
+                                worker25ms(work_enum.to_string(), 
+                                &data.receiver25,
+                                &data.worker25running));
+                        } else {
+                            println!("{} already running.", work_enum.to_string()); 
+                        }
                     },
                     WorkersEnum::StopWorker25ms => {
-                        println!("{} stopping ...", work_enum.to_string());
-                        data.sender25.lock().unwrap().send("Stop").expect("Send failed");
+                        if true == *data.worker25running.lock().unwrap() {
+                            println!("{} stopping ...", work_enum.to_string());
+                            data.sender25.lock().unwrap().send("Stop").expect("Send failed");
+                        } else {
+                            println!("{} is NOT even running. ", work_enum.to_string());
+                        }   
                     },
                     WorkersEnum::StartWorker50ms => {
-                        println!("{} starting !!", work_enum.to_string());
-                        let _handle50ms = thread::spawn(move || worker50ms(work_enum.to_string(), &data.receiver50));
+                        if false == *data.worker50running.lock().unwrap() {
+                            println!("{} starting !!", work_enum.to_string()); 
+                            let _handle50ms = thread::spawn(move || 
+                                worker50ms(work_enum.to_string(), 
+                                &data.receiver50,
+                                &data.worker50running));
+                        } else {
+                            println!("{} already running.", work_enum.to_string()); 
+                        }
                     },
                     WorkersEnum::StopWorker50ms => {
-                        println!("{} stopping ...", work_enum.to_string()); 
-                        data.sender50.lock().unwrap().send("Stop").expect("Send failed");
+                        if true == *data.worker50running.lock().unwrap() {
+                            println!("{} stopping ...", work_enum.to_string());
+                            data.sender50.lock().unwrap().send("Stop").expect("Send failed");
+                        } else {
+                            println!("{} is NOT even running. ", work_enum.to_string());
+                        }   
                     },
                     WorkersEnum::StartWorker100ms => {
-                        println!("{} starting !!", work_enum.to_string());
-                        let _handle100ms = thread::spawn(move || worker100ms(work_enum.to_string(), &data.receiver100));
+                        if false == *data.worker100running.lock().unwrap() {
+                            println!("{} starting !!", work_enum.to_string()); 
+                            let _handle100ms = thread::spawn(move || 
+                                worker100ms(work_enum.to_string(), 
+                                &data.receiver100,
+                                &data.worker100running));
+                        } else {
+                            println!("{} already running.", work_enum.to_string()); 
+                        }
                     },
                     WorkersEnum::StopWorker100ms => {
-                        println!("{} stopping ...", work_enum.to_string()); 
-                        data.sender100.lock().unwrap().send("Stop").expect("Send failed");
+                        if true == *data.worker100running.lock().unwrap() {
+                            println!("{} stopping ...", work_enum.to_string());
+                            data.sender100.lock().unwrap().send("Stop").expect("Send failed");
+                        } else {
+                            println!("{} is NOT even running. ", work_enum.to_string());
+                        }   
                     },
                     WorkersEnum::StartWorker250ms => {
-                        println!("{} starting !!", work_enum.to_string()); 
-                        let _handle250ms = thread::spawn(move || worker250ms(work_enum.to_string(), &data.receiver250));
+                        if false == *data.worker250running.lock().unwrap() {
+                            println!("{} starting !!", work_enum.to_string()); 
+                            let _handle250ms = thread::spawn(move || 
+                                worker250ms(work_enum.to_string(), 
+                                &data.receiver250,
+                                &data.worker250running));
+                        } else {
+                            println!("{} already running.", work_enum.to_string()); 
+                        }
                     },
                     WorkersEnum::StopWorker250ms => {
-                        println!("{} stopping ...", work_enum.to_string()); 
-                        data.sender250.lock().unwrap().send("Stop").expect("Send failed");
+                        if true == *data.worker250running.lock().unwrap() {
+                            println!("{} stopping ...", work_enum.to_string());
+                            data.sender250.lock().unwrap().send("Stop").expect("Send failed");
+                        } else {
+                            println!("{} is NOT even running. ", work_enum.to_string());
+                        }   
                     },
                 }
             }  
@@ -511,7 +578,6 @@ async fn execute(payload: web::Json<RequestMessage>,
     
 }
                 
-
 // run server with 
 // > ./instreams -s 
 // (uses defaults + random port)
