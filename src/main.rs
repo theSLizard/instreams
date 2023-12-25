@@ -21,15 +21,26 @@ use uuid::Uuid;
 //> curl --header "Content-Type: application/json" --request POST --data '{"key": "{session_key}", "receiver": "Worker10", "command": "UpdateStatus"}' localhost:8082/command       
 
 struct InstreamState {
+
     master_key: Mutex<String>,
     code_segment: Mutex<Vec<Instruction>>, 
+
+    worker10running: Mutex<bool>,
+    worker25running: Mutex<bool>,
+    worker50running: Mutex<bool>,
+    worker100running: Mutex<bool>,
+    worker250running: Mutex<bool>,
+    
     sender10: Mutex<mpsc::Sender<&'static str>>, 
     sender25: Mutex<mpsc::Sender<&'static str>>, 
+    sender50: Mutex<mpsc::Sender<&'static str>>, 
+    sender100: Mutex<mpsc::Sender<&'static str>>, 
     sender250: Mutex<mpsc::Sender<&'static str>>, 
     receiver10: Mutex<mpsc::Receiver<&'static str>>, 
     receiver25: Mutex<mpsc::Receiver<&'static str>>,
+    receiver50: Mutex<mpsc::Receiver<&'static str>>,
+    receiver100: Mutex<mpsc::Receiver<&'static str>>,
     receiver250: Mutex<mpsc::Receiver<&'static str>>,
-
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -102,7 +113,6 @@ impl FromStr for DestinationEnum {
     }
 }
 
-
 #[derive(Debug, Deserialize)]
 enum WorkersEnum {
     StartWorker10ms,
@@ -118,25 +128,20 @@ enum WorkersEnum {
 }
 
 impl FromStr for WorkersEnum {
-
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-
         match s {
-
             "StartWorker10ms" => Ok(WorkersEnum::StartWorker10ms),
             "StartWorker25ms" => Ok(WorkersEnum::StartWorker25ms),
             "StartWorker50ms" => Ok(WorkersEnum::StartWorker50ms),
             "StartWorker100ms" => Ok(WorkersEnum::StartWorker100ms),
             "StartWorker250ms" => Ok(WorkersEnum::StartWorker250ms),
-
             "StopWorker10ms" => Ok(WorkersEnum::StopWorker10ms),
             "StopWorker25ms" => Ok(WorkersEnum::StopWorker25ms),
             "StopWorker50ms" => Ok(WorkersEnum::StopWorker50ms),
             "StopWorker100ms" => Ok(WorkersEnum::StopWorker100ms),
             "StopWorker250ms" => Ok(WorkersEnum::StopWorker250ms),
-
             _ => Err("Invalid string for WorkersEnum".to_string()),
         }
     }
@@ -147,19 +152,16 @@ impl fmt::Display for WorkersEnum {
         
         // Implement how each variant should be displayed
         match self {
-
             WorkersEnum::StartWorker10ms => write!(f, "StartWorker10ms"),
             WorkersEnum::StartWorker25ms => write!(f, "StartWorker25ms"),
             WorkersEnum::StartWorker50ms => write!(f, "StartWorker50ms"),
             WorkersEnum::StartWorker100ms => write!(f, "StartWorker100ms"),
             WorkersEnum::StartWorker250ms => write!(f, "StartWorker250ms"),
-
             WorkersEnum::StopWorker10ms => write!(f, "StopWorker10ms"),
             WorkersEnum::StopWorker25ms => write!(f, "StopWorker25ms"),
             WorkersEnum::StopWorker50ms => write!(f, "StopWorker50ms"),
             WorkersEnum::StopWorker100ms => write!(f, "StopWorker100ms"),
             WorkersEnum::StopWorker250ms => write!(f, "StopWorker250ms"),
-            
         }
     }
 }
@@ -186,33 +188,85 @@ fn sleep_ms(ms: u64) {
 }
 
 
-fn worker10ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>) {
+fn worker10ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>, running: &Mutex<bool>) {
     
+    *running.lock().unwrap() = true;
     println!("Spawning thread: {}", name);
     
     loop { 
-        match receiver.lock().unwrap().recv()  { // szlo1: todo: this needs to NOT be blocking !! #get_back_to_this
-            Ok(message) => { // szlo1: message passing logic OK otherwise 
-                println!("Received by {} => {}", name, message);
+        match receiver.lock().unwrap().try_recv() {
+            Ok(msg) => {
+                println!("Received by {} => {}", name, msg);
+                let command_to_execute = CommandEnum::from_str(&msg);
+                match command_to_execute { 
+                    Ok(command) => {
+                        match command {
+                            // todo: check how to move these strings into a resource that is linked into the data segment.
+                            // so we can simply reference these string resources - is this even possible, btw ?? (it should be)
+                            CommandEnum::Stop => { 
+                                println!("... stopping.");
+                                break;
+                            }, 
+                            CommandEnum::Start => {
+                                println!("... starting.");
+                            }, 
+                            CommandEnum::Restart => {
+                                println!("... re-starting.");
+                            },
+                            CommandEnum::Terminate => {
+                                println!("... terminating.");
+                            },
+                            CommandEnum::UpdateStatus => {
+                                println!("... updating status.");
+                            },
+                        }
+                    }
+                    Err(e) => {
+                        println!("Error: {}", e);
+                    }
+                }
             }
-            Err(e) => {
-                println!("Error: {}", e);
+
+            Err(mpsc::TryRecvError::Empty) => {
+                // Channel is empty, do other work or sleep
+                //println!("No message yet, do other work...");
+                sleep_ms(10);
             }
+
+            Err(mpsc::TryRecvError::Disconnected) => {
+                println!("Sender disconnected, exiting loop.");
+                break;
+            }
+
         }
-    
-        sleep_ms(10);
-        //println!("|| --> 10 ms"); 
     }
+
+    println!("Thread exiting ..");
+    *running.lock().unwrap() = false;
 }
 
-fn worker25ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>) {
+fn worker25ms(_name: String, _receiver: &Mutex<mpsc::Receiver<&str>>) {
     loop {
         sleep_ms(25);
         println!("|| --> 25 ms"); 
     }
 }
 
-fn worker250ms(name: String, receiver: &Mutex<mpsc::Receiver<&str>>) {
+fn worker50ms(_name: String, _receiver: &Mutex<mpsc::Receiver<&str>>) {
+    loop {
+        sleep_ms(50);
+        println!("|| --> 25 ms"); 
+    }
+}
+
+fn worker100ms(_name: String, _receiver: &Mutex<mpsc::Receiver<&str>>) {
+    loop {
+        sleep_ms(100);
+        println!("|| --> 25 ms"); 
+    }
+}
+
+fn worker250ms(_name: String, _receiver: &Mutex<mpsc::Receiver<&str>>) {
     loop {
         sleep_ms(250);
         println!("|| --> 250 ms"); 
@@ -283,17 +337,6 @@ async fn list_program(data: web::Data<Arc<InstreamState>>) -> impl Responder {
                     })
 }
 
-
-/*
-fn thread_function<'a>(shared_string: &'a Arc<Mutex<String>>, sender: mpsc::Sender<&'a str>) {
-    // Access the shared string inside the Mutex
-    let locked_string = shared_string.lock().unwrap();
-
-    // Send the string slice through the channel
-    sender.send(&*locked_string).expect("Send failed");
-}
-*/
-
 #[post("/command")]
 async fn send_command(payload: web::Json<CommandMessage>, 
                 _req:HttpRequest, data: web::Data<Arc<InstreamState>>) -> impl Responder {
@@ -311,9 +354,6 @@ async fn send_command(payload: web::Json<CommandMessage>,
     ret_value.push_str(&command);
 
     if *key == data.master_key.lock().unwrap().to_string() { 
-
-        // todo: implement sending commands to specific threads here.
-
         // map command to enum
         let command_to_execute = CommandEnum::from_str(&command);
         match command_to_execute {
@@ -350,19 +390,16 @@ async fn send_command(payload: web::Json<CommandMessage>,
                         data.sender25.lock().unwrap().send(actual_command).expect("Send failed");
                     }
                     DestinationEnum::Worker50 => {
-                        //
+                        data.sender50.lock().unwrap().send(actual_command).expect("Send failed");
                     }
                     DestinationEnum::Worker100 => {
-                        //
+                        data.sender100.lock().unwrap().send(actual_command).expect("Send failed");
                     }
                     DestinationEnum::Worker250 => {
                         data.sender250.lock().unwrap().send(actual_command).expect("Send failed");
                     }
-
                 }
-
             }
-
             Err(e) => {
                 println!("Error: {}", e);
                 ret_value.push_str(" ::: Error :: ");
@@ -401,51 +438,59 @@ async fn execute(payload: web::Json<RequestMessage>,
         // note: from_str is part of then enum's custom implementation !!
         let work_to_do = WorkersEnum::from_str(&work);
     
-        match work_to_do {
-            
+        match work_to_do { 
             Ok(work_enum) => {
-
                 // Do something with the enum
                 match work_enum {
                     WorkersEnum::StartWorker10ms => { 
-                        println!("{} starting ...", work_enum.to_string()); 
-                        let _handle10ms = thread::spawn(move || worker10ms(work_enum.to_string(), &data.receiver10));
-
+                        if false == *data.worker10running.lock().unwrap() {
+                            println!("{} starting !!", work_enum.to_string()); 
+                            let _handle10ms = thread::spawn(move || 
+                                worker10ms(work_enum.to_string(), 
+                                &data.receiver10,
+                                &data.worker10running));
+                        } else {
+                            println!("{} already running.", work_enum.to_string()); 
+                        }
                     },
                     WorkersEnum::StopWorker10ms => {
-                        println!("{} starting ...", work_enum.to_string()); 
+                        println!("{} stopping ...", work_enum.to_string());
+                        data.sender10.lock().unwrap().send("Stop").expect("Send failed");
                     },
                     WorkersEnum::StartWorker25ms => {
-                        println!("{} starting ...", work_enum.to_string());
+                        println!("{} starting !!", work_enum.to_string());
                         let _handle25ms = thread::spawn(move || worker25ms(work_enum.to_string(), &data.receiver25));
                     },
                     WorkersEnum::StopWorker25ms => {
-                        println!("{} starting ...", work_enum.to_string()); 
+                        println!("{} stopping ...", work_enum.to_string());
+                        data.sender25.lock().unwrap().send("Stop").expect("Send failed");
                     },
                     WorkersEnum::StartWorker50ms => {
-                        println!("{} starting ...", work_enum.to_string()); 
+                        println!("{} starting !!", work_enum.to_string());
+                        let _handle50ms = thread::spawn(move || worker50ms(work_enum.to_string(), &data.receiver50));
                     },
                     WorkersEnum::StopWorker50ms => {
-                        println!("{} starting ...", work_enum.to_string()); 
+                        println!("{} stopping ...", work_enum.to_string()); 
+                        data.sender50.lock().unwrap().send("Stop").expect("Send failed");
                     },
                     WorkersEnum::StartWorker100ms => {
-                        println!("{} starting ...", work_enum.to_string()); 
+                        println!("{} starting !!", work_enum.to_string());
+                        let _handle100ms = thread::spawn(move || worker100ms(work_enum.to_string(), &data.receiver100));
                     },
                     WorkersEnum::StopWorker100ms => {
-                        println!("{} starting ...", work_enum.to_string()); 
+                        println!("{} stopping ...", work_enum.to_string()); 
+                        data.sender100.lock().unwrap().send("Stop").expect("Send failed");
                     },
                     WorkersEnum::StartWorker250ms => {
-                        println!("{} starting ...", work_enum.to_string()); 
-
+                        println!("{} starting !!", work_enum.to_string()); 
                         let _handle250ms = thread::spawn(move || worker250ms(work_enum.to_string(), &data.receiver250));
                     },
                     WorkersEnum::StopWorker250ms => {
-                        println!("{} starting ...", work_enum.to_string()); 
+                        println!("{} stopping ...", work_enum.to_string()); 
+                        data.sender250.lock().unwrap().send("Stop").expect("Send failed");
                     },
-                    
                 }
-            }
-            
+            }  
             Err(e) => {
                 println!("Error: {}", e);
                 ret_value.push_str(" ::: Error :: ");
@@ -490,31 +535,42 @@ async fn main() -> std::io::Result<()>{
                     return Ok(());
                 },
                 "-s" => {
-
                     println!(":.:.:");
-
                     let socket_address = if args.len() > 2 { args[2].to_string() } 
                                                         else { "127.0.0.1:0".to_string() };
-
-
                      // Create a channels
                     let (sender10, receiver10_orig) = mpsc::channel();
                     let (sender25, receiver25_orig) = mpsc::channel();
+                    let (sender50, receiver50_orig) = mpsc::channel();
+                    let (sender100, receiver100_orig) = mpsc::channel();
                     let (sender250, receiver250_orig) = mpsc::channel();
-
 
                     // Clone the senders for each thread
                     let sender10_clone = sender10.clone();
                     let sender25_clone = sender25.clone();
+                    let sender50_clone = sender50.clone();
+                    let sender100_clone = sender100.clone();
                     let sender250_clone = sender250.clone();
 
                     let stream_state = web::Data::new(Arc::new(InstreamState {
+                        
                         master_key: Mutex::new(0.to_string()),
                         code_segment: Vec::new().into(),
+
+                        worker10running: Mutex::new(false),
+                        worker25running: Mutex::new(false),
+                        worker50running: Mutex::new(false),
+                        worker100running: Mutex::new(false),
+                        worker250running: Mutex::new(false),
+
                         sender10: sender10_clone.into(),
                         receiver10: receiver10_orig.into(), // Mutex::new(receiver10_orig),
                         sender25: sender25_clone.into(),
                         receiver25: receiver25_orig.into(), // Mutex::new(receiver25_orig),
+                        sender50: sender50_clone.into(),
+                        receiver50: receiver50_orig.into(), // Mutex::new(receiver50_orig),
+                        sender100: sender100_clone.into(),
+                        receiver100: receiver100_orig.into(), // Mutex::new(receiver100_orig),
                         sender250: sender250_clone.into(),
                         receiver250: receiver250_orig.into(), // Mutex::new(receiver250_orig),
                     }));
@@ -527,7 +583,6 @@ async fn main() -> std::io::Result<()>{
                             }
                         };
                     
-
                     let socket_address: SocketAddr = match tcp_listener.local_addr() {
                         Ok(address) => address,
                         Err(error) => {
