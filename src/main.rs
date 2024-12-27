@@ -188,6 +188,17 @@ fn sleep_ms(ms: u64) {
 }
 
 fn msg_loop(identifier: String, receiver: &Mutex<mpsc::Receiver<&str>>) {
+
+    // set doze interval
+    let doze: u64 = match identifier.as_str() {
+        "StartWorker10ms" => 10,
+        "StartWorker25ms" => 25,
+        "StartWorker50ms" => 50,
+        "StartWorker100ms" => 100,
+        "StartWorker250ms" => 250,
+        _ => identifier.parse::<u64>().unwrap_or_default()
+    };
+
     // common processing & message loop
     loop { 
         match receiver.lock().unwrap().try_recv() {
@@ -223,8 +234,7 @@ fn msg_loop(identifier: String, receiver: &Mutex<mpsc::Receiver<&str>>) {
 
             Err(mpsc::TryRecvError::Empty) => {
                 // Channel is empty, do other work or sleep
-                //println!("No message yet, do other work...");
-                sleep_ms(10);
+                sleep_ms(doze);
             }
 
             Err(mpsc::TryRecvError::Disconnected) => {
