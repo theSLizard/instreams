@@ -82,7 +82,7 @@ impl FromStr for CommandEnum {
             "Restart" => Ok(CommandEnum::Restart),
             "Terminate" => Ok(CommandEnum::Terminate),
             "UpdateStatus" => Ok(CommandEnum::UpdateStatus),
-            _ => Err("Invalid string for Comman dEnum".to_string()),
+            _ => Err("Invalid string for Command Enum".to_string()),
         }
     }
 }
@@ -327,6 +327,31 @@ async fn status() -> impl Responder {
 /* curl --header "Content-Type: application/json" --request POST   
 --data '{"instructions":[{"opcode": "add","imdval": "0x","regsrc": 1,"regext": 0,"regdst": 2},
 {"opcode": "sub","imdval": "0x","regsrc": 3,"regext": 0,"regdst": 4}]}' http://localhost:8081/load --verbose */
+
+/* example instructions
+
+{
+    "instructions": [
+        {
+            "opcode": "add",
+            "imdval": "0x",
+            "regsrc": 1,
+            "regext": 0,
+            "regdst": 2
+        },
+        {
+            "opcode": "sub",
+            "imdval": "0x",
+            "regsrc": 3,
+            "regext": 0,
+            "regdst": 4
+        }
+    ]
+}
+
+*/
+
+// copy-paste: curl --header "Content-Type: application/json" --request POST --data '{"instructions":[{"opcode": "add","imdval": "0x","regsrc": 1,"regext": 0,"regdst": 2}, {"opcode": "sub","imdval": "0x","regsrc": 3,"regext": 0,"regdst": 4}]}' http://localhost:8082/load --verbose
 #[post("/load")]
 async fn load_program(payload: web::Json<ProgramSource>, 
                 _req:HttpRequest, data: web::Data<Arc<InstreamState>>) -> impl Responder {
@@ -356,6 +381,8 @@ async fn list_program(data: web::Data<Arc<InstreamState>>) -> impl Responder {
                     })
 }
 
+// {"key":"7e8b0844-d5d4-4118-906a-a4012e1566df","receiver":"Worker100","command":"UpdateStatus"}
+// curl --header "Content-Type: application/json" --request POST --data '{"key":"7e8b0844-d5d4-4118-906a-a4012e1566df","receiver":"Worker100","command":"UpdateStatus"} http://localhost:8082/command' --verbose
 #[post("/command")]
 async fn send_command(payload: web::Json<CommandMessage>, 
                 _req:HttpRequest, data: web::Data<Arc<InstreamState>>) -> impl Responder {
@@ -384,7 +411,7 @@ async fn send_command(payload: web::Json<CommandMessage>,
                     CommandEnum::Start => {actual_command = &"Start"; }, 
                     CommandEnum::Restart => {actual_command = &"Restart"; },
                     CommandEnum::Terminate => {actual_command = &"Terminate"; },
-                    CommandEnum::UpdateStatus => {actual_command = &"Update_Status"; },
+                    CommandEnum::UpdateStatus => {actual_command = &"UpdateStatus"; },
                 }
             }
             Err(e) => {
@@ -436,7 +463,27 @@ async fn send_command(payload: web::Json<CommandMessage>,
     }
 }
 
+// example usage: 
+// > curl localhost:8082/session_key
+// {"message":"ea7a3185-b17d-475c-8be7-a6ba577c3d84"}
 
+// > curl --header "Content-Type: application/json" --request POST http://localhost:8082/work --data '{"key":"ea7a3185-b17d-475c-8be7-a6ba577c3d84","message":"StartWorker100ms"}'
+// > curl --header "Content-Type: application/json" --request POST http://localhost:8082/command --data '{"key":"ea7a3185-b17d-475c-8be7-a6ba577c3d84","receiver":"Worker100","command":"UpdateStatus"}'
+
+/* 
+// work payload
+{
+	"key": "7e8b0844-d5d4-4118-906a-a4012e1566df",
+	"message": "StartWorker100ms"
+} 
+
+// command payload
+{
+    "key": "ea7a3185-b17d-475c-8be7-a6ba577c3d84",
+    "receiver": "Worker100",
+    "command": "UpdateStatus"
+}
+*/
 
 #[post("/work")]
 async fn execute(payload: web::Json<RequestMessage>, 
